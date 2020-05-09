@@ -150,7 +150,39 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
 void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
                      std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC)
 {
-    // ...
+    vector<float> prevXs;
+    vector<float> currXs;
+
+    for (auto &lidarPt : lidarPointsPrev)
+    {
+        float xw = lidarPt.x; // world position in m with x facing forward from sensor
+        prevXs.push_back(xw);
+    }
+
+    for (auto &lidarPt : lidarPointsCurr)
+    {
+        float xw = lidarPt.x; // world position in m with x facing forward from sensor
+        currXs.push_back(xw);
+    }
+
+    sort(prevXs.begin(), prevXs.end());
+    sort(currXs.begin(), currXs.end());
+
+    int n = 2; // pick n-th smallest x as xmin to avoid statistical errors
+    float xLimit = 2.0; // if non ego-car's x is at xLimit, we define it as collision
+
+    float prevXmin = prevXs[n];
+    float currXmin = currXs[n];
+
+    std::cout << "prevXmin: " << prevXmin << " currXmin: " << currXmin << std::endl;
+
+    float dx = prevXmin - currXmin;
+    float dt = 1.0 / frameRate;
+
+    float curV = dx / dt;
+    float leftX = currXmin - xLimit;
+
+    TTC = leftX / curV;
 }
 
 
