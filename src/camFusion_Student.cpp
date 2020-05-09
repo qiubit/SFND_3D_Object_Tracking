@@ -217,7 +217,7 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
     float prevXmin = prevXs[n];
     float currXmin = currXs[n];
 
-    std::cout << "prevXmin: " << prevXmin << " currXmin: " << currXmin << std::endl;
+    // std::cout << "prevXmin: " << prevXmin << " currXmin: " << currXmin << std::endl;
 
     float dx = prevXmin - currXmin;
     float dt = 1.0 / frameRate;

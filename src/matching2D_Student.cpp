@@ -128,7 +128,7 @@ void detKeypointsModern(std::vector<cv::KeyPoint> &keypoints, cv::Mat &img, std:
     }
     else
     {
-        throw std::invalid_argument("Unknown detectorType");
+        throw std::invalid_argument("Unknown detectorType: " + detectorType);
     }
 
     double t = (double)cv::getTickCount();

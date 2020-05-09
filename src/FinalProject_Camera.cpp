@@ -27,6 +27,8 @@ int main(int argc, const char *argv[])
 {
     /* INIT VARIABLES AND DATA STRUCTURES */
 
+    vector<double> ttcCamMeasurements;
+
     // data location
     string dataPath = "../";
 
@@ -48,6 +50,18 @@ int main(int argc, const char *argv[])
     // Lidar
     string lidarPrefix = "KITTI/2011_09_26/velodyne_points/data/000000";
     string lidarFileType = ".bin";
+
+    string detectorType = "SHITOMASI"; // SHITOMASI, HARRIS, AKAZE, BRISK, FAST, ORB, SIFT
+    string descriptorType = "BRISK"; // BRISK, BRIEF, ORB, FREAK, AKAZE, SIFT
+
+    if (argc == 3) {
+        detectorType = argv[1];
+        descriptorType = argv[2];
+    }
+
+    stringstream ss;
+    ss << detectorType << "_" << descriptorType << ".out";
+    string ttcCamMeasuremetsFile = ss.str();
 
     // calibration data for camera and lidar
     cv::Mat P_rect_00(3,4,cv::DataType<double>::type); // 3x4 projection matrix after rectification
@@ -129,12 +143,10 @@ int main(int argc, const char *argv[])
         clusterLidarWithROI((dataBuffer.end()-1)->boundingBoxes, (dataBuffer.end() - 1)->lidarPoints, shrinkFactor, P_rect_00, R_rect_00, RT);
 
         // Visualize 3D objects
-        bVis = true;
         if(bVis)
         {
             show3DObjects((dataBuffer.end()-1)->boundingBoxes, cv::Size(4.0, 20.0), cv::Size(2000, 2000), true);
         }
-        bVis = false;
 
         cout << "#4 : CLUSTER LIDAR POINT CLOUD done" << endl;
 
@@ -146,9 +158,13 @@ int main(int argc, const char *argv[])
 
         // extract 2D keypoints from current image
         vector<cv::KeyPoint> keypoints; // create empty feature list for current image
-        string detectorType = "FAST";
 
-        detKeypointsModern(keypoints, imgGray, detectorType, false);
+        if (detectorType.compare("SHITOMASI") == 0)
+            detKeypointsShiTomasi(keypoints, imgGray, false);
+        else if (detectorType.compare("SHITOMASI") == 0)
+            detKeypointsHarris(keypoints, imgGray, false);
+        else
+            detKeypointsModern(keypoints, imgGray, detectorType, false);
 
         // optional : limit number of keypoints (helpful for debugging and learning)
         bool bLimitKpts = false;
@@ -173,7 +189,6 @@ int main(int argc, const char *argv[])
         /* EXTRACT KEYPOINT DESCRIPTORS */
 
         cv::Mat descriptors;
-        string descriptorType = "BRIEF"; // BRISK, BRIEF, ORB, FREAK, AKAZE, SIFT
         descKeypoints((dataBuffer.end() - 1)->keypoints, (dataBuffer.end() - 1)->cameraImg, descriptors, descriptorType);
 
         // push descriptors for current frame to end of data buffer
@@ -189,12 +204,17 @@ int main(int argc, const char *argv[])
 
             vector<cv::DMatch> matches;
             string matcherType = "MAT_BF";        // MAT_BF, MAT_FLANN
-            string descriptorType = "DES_BINARY"; // DES_BINARY, DES_HOG
             string selectorType = "SEL_KNN";       // SEL_NN, SEL_KNN
+
+            string descriptorMetric;
+            if (descriptorType.compare("SIFT") == 0)
+                descriptorMetric = "DES_HOG";
+            else
+                descriptorMetric = "DES_BINARY";
 
             matchDescriptors((dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints,
                              (dataBuffer.end() - 2)->descriptors, (dataBuffer.end() - 1)->descriptors,
-                             matches, descriptorType, matcherType, selectorType);
+                             matches, descriptorMetric, matcherType, selectorType);
 
             // store matches in current data frame
             (dataBuffer.end() - 1)->kptMatches = matches;
@@ -202,31 +222,31 @@ int main(int argc, const char *argv[])
             cout << "#7 : MATCH KEYPOINT DESCRIPTORS done" << endl;
 
             // auto kpts = (dataBuffer.end() - 1)->keypoints;
-            cv::Mat imgVis, imgPrevVis;
-            imgPrevVis = ((dataBuffer.end() - 2)->cameraImg).clone();
-            imgVis = ((dataBuffer.end() - 1)->cameraImg).clone();
-            auto prevBboxes = (dataBuffer.end() - 2)->boundingBoxes;
-            auto bboxes = (dataBuffer.end() - 1)->boundingBoxes;
-            for (auto bbox : prevBboxes) {
-                cv::rectangle(imgPrevVis, bbox.roi, cv::Scalar(0, 255, 0));
-                cv::putText(imgPrevVis, to_string(bbox.boxID), cv::Point(bbox.roi.x, bbox.roi.y), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(255, 255, 0), 3);
-            }
-            for (auto bbox : bboxes) {
-                cv::rectangle(imgVis, bbox.roi, cv::Scalar(0, 255, 0));
+            // cv::Mat imgVis, imgPrevVis;
+            // imgPrevVis = ((dataBuffer.end() - 2)->cameraImg).clone();
+            // imgVis = ((dataBuffer.end() - 1)->cameraImg).clone();
+            // auto prevBboxes = (dataBuffer.end() - 2)->boundingBoxes;
+            // auto bboxes = (dataBuffer.end() - 1)->boundingBoxes;
+            // for (auto bbox : prevBboxes) {
+            //     cv::rectangle(imgPrevVis, bbox.roi, cv::Scalar(0, 255, 0));
+            //     cv::putText(imgPrevVis, to_string(bbox.boxID), cv::Point(bbox.roi.x, bbox.roi.y), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(255, 255, 0), 3);
+            // }
+            // for (auto bbox : bboxes) {
+            //     cv::rectangle(imgVis, bbox.roi, cv::Scalar(0, 255, 0));
 
-                // int kptCnt = 0;
-                // for (auto kpt : kpts) {
-                //     if (bbox.roi.contains(kpt.pt)) {
-                //         kptCnt += 1;
-                //     }
-                // }
-                // cv::putText(imgVis, to_string(kptCnt), cv::Point(bbox.roi.x, bbox.roi.y), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(255, 255, 255), 3);
+            //     // int kptCnt = 0;
+            //     // for (auto kpt : kpts) {
+            //     //     if (bbox.roi.contains(kpt.pt)) {
+            //     //         kptCnt += 1;
+            //     //     }
+            //     // }
+            //     // cv::putText(imgVis, to_string(kptCnt), cv::Point(bbox.roi.x, bbox.roi.y), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(255, 255, 255), 3);
 
-                cv::putText(imgVis, to_string(bbox.boxID), cv::Point(bbox.roi.x, bbox.roi.y), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(255, 255, 0), 3);
-            }
+            //     cv::putText(imgVis, to_string(bbox.boxID), cv::Point(bbox.roi.x, bbox.roi.y), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(255, 255, 0), 3);
+            // }
 
-            cv::vconcat(imgPrevVis,imgVis,imgVis);
-            cv::imshow("YOLO detections", imgVis);
+            // cv::vconcat(imgPrevVis,imgVis,imgVis);
+            // cv::imshow("YOLO detections", imgVis);
 
 
             /* TRACK 3D OBJECT BOUNDING BOXES */
@@ -237,12 +257,12 @@ int main(int argc, const char *argv[])
             matchBoundingBoxes(matches, bbBestMatches, *(dataBuffer.end()-2), *(dataBuffer.end()-1)); // associate bounding boxes between current and previous frame using keypoint matches
             //// EOF STUDENT ASSIGNMENT
 
-            std::cout << "\nCurrent Matches\n";
-            for (auto bbTobb : bbBestMatches) {
-                std::cout << bbTobb.first << " -> " << bbTobb.second << std::endl;
-            }
-            std::cout << std::endl;
-            cv::waitKey(0);
+            // std::cout << "\nCurrent Matches\n";
+            // for (auto bbTobb : bbBestMatches) {
+            //     std::cout << bbTobb.first << " -> " << bbTobb.second << std::endl;
+            // }
+            // std::cout << std::endl;
+            // cv::waitKey(0);
 
             // store matches in current data frame
             (dataBuffer.end()-1)->bbMatches = bbBestMatches;
@@ -290,7 +310,8 @@ int main(int argc, const char *argv[])
                     computeTTCCamera((dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints, currBB->kptMatches, sensorFrameRate, ttcCamera);
                     //// EOF STUDENT ASSIGNMENT
 
-                    bVis = true;
+                    ttcCamMeasurements.push_back(ttcCamera);
+
                     if (bVis)
                     {
                         cv::Mat visImg = (dataBuffer.end() - 1)->cameraImg.clone();
@@ -307,7 +328,6 @@ int main(int argc, const char *argv[])
                         cout << "Press key to continue to next frame" << endl;
                         cv::waitKey(0);
                     }
-                    bVis = false;
 
                 } // eof TTC computation
             } // eof loop over all BB matches            
@@ -315,6 +335,12 @@ int main(int argc, const char *argv[])
         }
 
     } // eof loop over all images
+
+    ofstream f;
+    f.open(ttcCamMeasuremetsFile);
+    for (auto ttc : ttcCamMeasurements)
+        f << ttc << std::endl;
+    f.close();
 
     return 0;
 }
