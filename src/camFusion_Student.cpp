@@ -2,6 +2,8 @@
 #include <iostream>
 #include <algorithm>
 #include <numeric>
+#include <unordered_set>
+#include <unordered_map>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
@@ -154,5 +156,97 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
 
 void matchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches, DataFrame &prevFrame, DataFrame &currFrame)
 {
-    // ...
+    std::unordered_map<int, std::unordered_map<int, int>> bboxIdToBboxMatchCounts;
+
+    auto prevBboxes = prevFrame.boundingBoxes;
+    auto currBboxes = currFrame.boundingBoxes;
+
+    auto prevKpts = prevFrame.keypoints;
+    auto currKpts = currFrame.keypoints;
+
+    std::unordered_map<int, std::unordered_set<int>> prevKptIdToPrevBbboxIds;
+    std::unordered_map<int, std::unordered_set<int>> currKptIdToCurrBboxIds;
+
+    for (int i = 0; i < prevKpts.size(); ++i) {
+        auto &kpt = prevKpts[i];
+        for (int j = 0; j < prevBboxes.size(); ++j) {
+            auto &bbox = prevBboxes[j];
+            if (bbox.roi.contains(kpt.pt)) {
+                // TODO: Possibly remove since not needed and not efficient
+                bbox.keypoints.push_back(kpt);
+
+                if (prevKptIdToPrevBbboxIds.find(i) == prevKptIdToPrevBbboxIds.end()) {
+                    prevKptIdToPrevBbboxIds[i] = std::unordered_set<int>();
+                }
+
+                prevKptIdToPrevBbboxIds[i].insert(j);
+            }
+        }
+    }
+
+    for (int i = 0; i < currKpts.size(); ++i) {
+        auto &kpt = currKpts[i];
+        for (int j = 0; j < currBboxes.size(); ++j) {
+            auto &bbox = currBboxes[j];
+            if (bbox.roi.contains(kpt.pt)) {
+                // TODO: Possibly remove since not needed and not efficient
+                bbox.keypoints.push_back(kpt);
+
+                if (currKptIdToCurrBboxIds.find(i) == currKptIdToCurrBboxIds.end()) {
+                    currKptIdToCurrBboxIds[i] = std::unordered_set<int>();
+                }
+
+                currKptIdToCurrBboxIds[i].insert(j);
+            }
+        }
+    }
+
+    for (auto &match : matches) {
+        int prevKptId = match.queryIdx;
+        int currKptId = match.trainIdx;
+
+        // No matched bbox on any side - continue
+        if (prevKptIdToPrevBbboxIds.find(prevKptId) == prevKptIdToPrevBbboxIds.end()
+            || currKptIdToCurrBboxIds.find(currKptId) == currKptIdToCurrBboxIds.end()) {
+            continue;
+        }
+
+        auto &prevBboxIds = prevKptIdToPrevBbboxIds[prevKptId];
+        auto &currBboxIds = currKptIdToCurrBboxIds[currKptId];
+
+        for (auto &prevBboxId : prevBboxIds) {
+            if (bboxIdToBboxMatchCounts.find(prevBboxId) == bboxIdToBboxMatchCounts.end()) {
+                bboxIdToBboxMatchCounts[prevBboxId] = std::unordered_map<int, int>();
+            }
+
+            auto &bboxMatchCounts = bboxIdToBboxMatchCounts[prevBboxId];
+
+            for (auto &currBboxId : currBboxIds) {
+                if (bboxMatchCounts.find(currBboxId) == bboxMatchCounts.end()) {
+                    bboxMatchCounts[currBboxId] = 0;
+                }
+
+                bboxMatchCounts[currBboxId] += 1;
+            }
+        }
+    }
+
+    for (auto &bboxMatchCountsPair : bboxIdToBboxMatchCounts) {
+        int bboxId = bboxMatchCountsPair.first;
+        std::unordered_map<int, int> &matchCounts = bboxMatchCountsPair.second;
+
+        int bestMatchCount = 0;
+        int bestMatchedBboxId = -1;
+        for (auto &currBboxMatchCount : matchCounts) {
+            int currBboxId = currBboxMatchCount.first;
+            int matchCount = currBboxMatchCount.second;
+
+            if (matchCount > bestMatchCount) {
+                bestMatchCount = matchCount;
+                bestMatchedBboxId = currBboxId;
+            }
+        }
+
+        bbBestMatches[prevBboxes[bboxId].boxID] = currBboxes[bestMatchedBboxId].boxID;
+    }
 }
